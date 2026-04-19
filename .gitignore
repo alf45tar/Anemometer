@@ -1,0 +1,13 @@
+# PlatformIO / ESP-IDF build outputs
+.pio/
+managed_components/
+build/
+
+# ESP-IDF generated sdkconfig variants
+sdkconfig
+sdkconfig.*
+!sdkconfig.*.defaults
+
+# Editor and workspace noise
+.vscode
+.DS_Store

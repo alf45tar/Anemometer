@@ -76,32 +76,32 @@ static uint8_t s_adv_len;
 
 void app_main(void)
 {
-    if (esp_log_level_get(TAG) >= ESP_LOG_INFO) {
-        /*
-        *   Set default log level to WARN to reduce noise, but set INFO for our tag.
-        */
-        esp_log_level_set("*", ESP_LOG_WARN);
-        esp_log_level_set(TAG, ESP_LOG_INFO);
-        /*
-        *  If user is using USB-serial-jtag then serial monitor needs some time to
-        *  re-connect to the USB port. We wait 3 sec here to allow for it to make the reconnection
-        *  before we print anything. Otherwise the chip will go back to sleep again before the user
-        *  has time to monitor any output.
-        */
-        vTaskDelay(pdMS_TO_TICKS(3000));
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
+    /*
+    *   Set default log level to WARN to reduce noise, but set INFO for our tag.
+    */
+    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+    /*
+    *  If user is using USB-serial-jtag then serial monitor needs some time to
+    *  re-connect to the USB port. We wait 3 sec here to allow for it to make the reconnection
+    *  before we print anything. Otherwise the chip will go back to sleep again before the user
+    *  has time to monitor any output.
+    */
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
-        ESP_LOGI(TAG, "Main processor will wake every %d seconds", SLEEP_DURATION);
+    ESP_LOGI(TAG, "Main processor will wake every %d seconds", SLEEP_DURATION);
 
-        uint32_t wake_causes = esp_sleep_get_wakeup_causes();
+    uint32_t wake_causes = esp_sleep_get_wakeup_causes();
 
-        if (wake_causes & BIT(ESP_SLEEP_WAKEUP_ULP)) {
-            ESP_LOGI(TAG, "ULP woke up the main CPU!");
-        }
-
-        if (wake_causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) {
-            ESP_LOGI(TAG, "Timer woke up the main CPU!");
-        }
+    if (wake_causes & BIT(ESP_SLEEP_WAKEUP_ULP)) {
+        ESP_LOGI(TAG, "ULP woke up the main CPU!");
     }
+
+    if (wake_causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) {
+        ESP_LOGI(TAG, "Timer woke up the main CPU!");
+    }
+#endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 
     /* Load the LP program only once so timer wakeups do not reset its state. */
     if (!ulp_program_initialized) {
@@ -289,6 +289,7 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
 
     s_adv_len = (uint8_t)(cursor - s_adv_data);
 
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
     if (esp_log_level_get(TAG) >= ESP_LOG_INFO) {
         char hex_line[(31 * 3) + 1] = {0};
         size_t pos = 0;
@@ -306,6 +307,7 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
         }
         ESP_LOGI(TAG, "BTHome V2 payload (%d bytes): %s", s_adv_len, hex_line);
     }
+#endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 }
 
 static uint16_t read_battery_mv(void)
@@ -367,6 +369,7 @@ static uint16_t read_battery_mv(void)
     }
 #endif
 
+    /* Average several ADC readings to reduce noise on the battery input. */
     for (int i = 0; i < BATTERY_ADC_SAMPLES; i++) {
         int raw = 0;
         if (adc_oneshot_read(adc_handle, channel, &raw) == ESP_OK) {
