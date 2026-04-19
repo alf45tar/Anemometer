@@ -1,0 +1,2 @@
+dependencies:
+  espressif/ble_hci: "^1.0.0"

@@ -1,3 +1,36 @@
+/*
+ * ======================================================================================
+ * ESP32-C6 ULTRA-LOW POWER (ULP) BLE ANEMOMETER
+ * ======================================================================================
+ * * DESCRIPTION:
+ *    This firmware transforms an ESP32-C6 into a high-efficiency wind speed sensor.
+ *    It uses the ULP (Ultra-Low Power) co-processor to count pulses from a reed
+ *    switch while the main core are in Deep Sleep.
+ * * HOW IT WORKS:
+ *    1. SLEEP: The ESP32 enters Deep Sleep (consuming ~10-15µA).
+ *    2. ULP MONITORING: The ULP co-processor remains active, using interrupt-driven
+ *        edge detection on SENSOR_PIN to detect magnet passes.
+ *    3. WAKEUP: Every 5 seconds, the main core wakes up to process the ULP data.
+ *    4. LOGIC ENGINE:
+ *        - If Wind Speed > 0: Calculates speed and broadcasts immediately via BLE.
+ *        - If Speed Changes: Broadcasts immediately to show the change.
+ *        - If No Wind: Skips BLE transmission to save battery.
+ *        - Heartbeat: Every 60 seconds, it forces a broadcast (even if no wind) so Home
+ *          Assistant knows the sensor is still online.
+ * * DATA PROTOCOL:
+ *    Uses BTHome V2 (Bluetooth Low Energy). Compatible with Home Assistant and Shelly
+ * * HARDWARE NOTES:
+ *    - SENSOR_PIN must be an RTC-capable pin.
+ *    - Pulses: 2 pulses per revolution (assuming 2 magnets).
+ *    - Radius: 0.078m (center to cup middle).
+ *    - Calibration: 2.5x factor to compensate for cup drag/aerodynamics.
+ * * POWER CONSUMPTION:
+ *    - Deep Sleep: ~15µA (it depends by the board, less feautures is better)
+ *    - BLE Broadcast (1.5s): ~100mA
+ *    - Estimated Battery Life (1000mAh Li-ion): >1 year with 1-minute heartbeats.
+ * ======================================================================================
+ */
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
@@ -5,6 +38,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_sleep.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
@@ -14,11 +48,7 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
-#include "esp_bt.h"
-#include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
-#include "host/ble_hs.h"
-#include "host/ble_gap.h"
+#include "ble_hci.h"
 #include "ulp_lp_core.h"
 #include "ulp_main.h"
 #include "lp_core_uart.h"
@@ -33,9 +63,6 @@ static const char *TAG = "anemometer";
 static void init_ulp_program(void);
 static void init_ble(float wind_speed_mps, uint8_t battery_percent);
 static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent);
-static void ble_host_task(void *param);
-static void ble_on_sync(void);
-static void start_ble_advertising(void);
 static uint16_t read_battery_mv(void);
 static uint8_t battery_mv_to_percent(uint16_t battery_mv);
 
@@ -46,16 +73,15 @@ static RTC_DATA_ATTR uint32_t last_advertised_pulse_delta;
 
 static uint8_t s_adv_data[31];
 static uint8_t s_adv_len;
-static uint8_t s_own_addr_type;
-static volatile bool s_ble_synced;
-static volatile bool s_adv_started;
 
 void app_main(void)
 {
-    esp_log_level_set("*", ESP_LOG_WARN);
-    esp_log_level_set(TAG, ESP_LOG_INFO);
-
     if (esp_log_level_get(TAG) >= ESP_LOG_INFO) {
+        /*
+        *   Set default log level to WARN to reduce noise, but set INFO for our tag.
+        */
+        esp_log_level_set("*", ESP_LOG_WARN);
+        esp_log_level_set(TAG, ESP_LOG_INFO);
         /*
         *  If user is using USB-serial-jtag then serial monitor needs some time to
         *  re-connect to the USB port. We wait 3 sec here to allow for it to make the reconnection
@@ -63,18 +89,18 @@ void app_main(void)
         *  has time to monitor any output.
         */
         vTaskDelay(pdMS_TO_TICKS(3000));
-    }
 
-    ESP_LOGI(TAG, "Main processor will wake every %d seconds", SLEEP_DURATION);
+        ESP_LOGI(TAG, "Main processor will wake every %d seconds", SLEEP_DURATION);
 
-    uint32_t wake_causes = esp_sleep_get_wakeup_causes();
+        uint32_t wake_causes = esp_sleep_get_wakeup_causes();
 
-    if (wake_causes & BIT(ESP_SLEEP_WAKEUP_ULP)) {
-        ESP_LOGI(TAG, "ULP woke up the main CPU!");
-    }
+        if (wake_causes & BIT(ESP_SLEEP_WAKEUP_ULP)) {
+            ESP_LOGI(TAG, "ULP woke up the main CPU!");
+        }
 
-    if (wake_causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) {
-        ESP_LOGI(TAG, "Timer woke up the main CPU!");
+        if (wake_causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) {
+            ESP_LOGI(TAG, "Timer woke up the main CPU!");
+        }
     }
 
     /* Load the LP program only once so timer wakeups do not reset its state. */
@@ -86,6 +112,7 @@ void app_main(void)
         /* Baseline on first boot to avoid using stale/uninitialized pulse deltas. */
         last_pulse_count = ulp_pulse_count;
         heartbeat_elapsed_seconds = 0;
+        last_advertised_pulse_delta = 0;
     }
 
     heartbeat_elapsed_seconds += SLEEP_DURATION;
@@ -100,7 +127,7 @@ void app_main(void)
         float rotations = (float)pulse_delta / PULSES_PER_ROTATION;
         float rps = rotations / (float)SLEEP_DURATION;
         float rpm = rps * 60.0f;
-        float wind_speed_mps = rps * ANEMOMETER_FACTOR_MPS_PER_RPS;
+        float wind_speed_mps = rps * (2.0f * 3.14159265358979323846f * RADIUS) * CALIBRATION_FACTOR;
         float wind_speed_kmh = wind_speed_mps * 3.6f;
         uint16_t battery_mv = read_battery_mv();
         uint8_t battery_percent = battery_mv_to_percent(battery_mv);
@@ -137,14 +164,12 @@ void app_main(void)
         init_ble(wind_speed_mps, battery_percent);
         last_advertised_pulse_delta = pulse_delta;
 
-        /* Wait briefly so the host can sync and start advertising. */
-        vTaskDelay(pdMS_TO_TICKS(250));
-        if (!s_ble_synced) {
-            ESP_LOGW(TAG, "BLE host not synced yet");
-        }
-
         /* Keep beaconing for a short window before deep sleep. */
         vTaskDelay(pdMS_TO_TICKS(BLE_ADV_DURATION_MS));
+
+        /* Stop advertising before sleeping. */
+        ESP_ERROR_CHECK(ble_hci_set_adv_enable(false));
+        ESP_ERROR_CHECK(ble_hci_deinit());
     } else {
         ESP_LOGI(TAG,
                  "Pulse count: %"PRIu32" (no change) | Heartbeat in %"PRIu32"s | Wind unchanged | skipping BLE advertising",
@@ -168,7 +193,7 @@ void app_main(void)
 
 static void init_ble(float wind_speed_mps, uint8_t battery_percent)
 {
-    /* NVS is required so NimBLE can store BLE state and controller data in flash */
+    /* NVS is required by the BT controller stack initialization path. */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -176,18 +201,39 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent)
     }
     ESP_ERROR_CHECK(ret);
 
-    /* Initialize the BLE controller and NimBLE host stack */
-    ESP_ERROR_CHECK(nimble_port_init());
+    uint8_t ble_addr[6] = {0};
+    if (esp_read_mac(ble_addr, ESP_MAC_BT) == ESP_OK) {
+        ESP_LOGI(TAG,
+                 "BLE MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                 ble_addr[0],
+                 ble_addr[1],
+                 ble_addr[2],
+                 ble_addr[3],
+                 ble_addr[4],
+                 ble_addr[5]);
+    } else {
+        ESP_LOGW(TAG, "Unable to read BLE MAC");
+    }
 
-    ble_hs_cfg.sync_cb = ble_on_sync;
+    ESP_ERROR_CHECK(ble_hci_init());
 
     build_ble_adv(wind_speed_mps, battery_percent);
 
-    s_ble_synced = false;
-    s_adv_started = false;
+    ble_hci_adv_param_t adv_param = {
+        .adv_int_min = BLE_ADV_INTERVAL_UNITS,
+        .adv_int_max = BLE_ADV_INTERVAL_UNITS,
+        .adv_type = ADV_TYPE_NONCONN_IND,
+        .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
+        .peer_addr = {0},
+        .peer_addr_type = BLE_ADDR_TYPE_PUBLIC,
+        .channel_map = ADV_CHNL_ALL,
+        .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
+    };
 
-    /* Start the NimBLE host task */
-    nimble_port_freertos_init(ble_host_task);
+    ESP_ERROR_CHECK(ble_hci_set_adv_param(&adv_param));
+    ESP_ERROR_CHECK(ble_hci_set_adv_data(s_adv_len, s_adv_data));
+    ESP_ERROR_CHECK(ble_hci_set_adv_enable(true));
+    ESP_LOGI(TAG, "BLE HCI advertising started");
 }
 
 static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
@@ -264,6 +310,18 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
 
 static uint16_t read_battery_mv(void)
 {
+    /* To ensure accurate ADC readings with high-value resistors, a 0.1uF (100nF)
+    *  ceramic capacitor MUST be placed between the ADC pin and GND.
+    *  Without the 0.1uF "reservoir" cap, the 470k
+    *  source impedance causes a significant voltage drop (sag) during
+    *  the sampling window, resulting in artificially low readings.
+    *  Resistor Divider Static Drain: assuming a 470k/470k divider,
+    *  the continuous leakage current is calculated as:
+    *         I ≈ 4.2V / 940,000Ω ≈ 4.5µA
+    *  This 4.5µA drain is CONTINUOUS, even during deep sleep.
+    *  This is such a low value that the internal chemical self-discharge
+    *  of the battery itself probably consumes more.
+    */
     adc_unit_t unit_id = ADC_UNIT_1;
     adc_channel_t channel = ADC_CHANNEL_0;
     adc_oneshot_unit_handle_t adc_handle = NULL;
@@ -345,71 +403,6 @@ static uint8_t battery_mv_to_percent(uint16_t battery_mv)
     uint32_t num = (uint32_t)(battery_mv - BATTERY_MIN_MV) * 100U;
     uint32_t den = (uint32_t)(BATTERY_MAX_MV - BATTERY_MIN_MV);
     return (uint8_t)(num / den);
-}
-
-static void ble_on_sync(void)
-{
-    uint8_t ble_addr[6] = {0};
-
-    int rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "ble_hs_id_infer_auto failed: rc=%d", rc);
-        return;
-    }
-
-    rc = ble_hs_id_copy_addr(s_own_addr_type, ble_addr, NULL);
-    if (rc == 0) {
-        ESP_LOGI(TAG,
-                 "BLE MAC: %02X:%02X:%02X:%02X:%02X:%02X",
-                 ble_addr[5],
-                 ble_addr[4],
-                 ble_addr[3],
-                 ble_addr[2],
-                 ble_addr[1],
-                 ble_addr[0]);
-    } else {
-        ESP_LOGW(TAG, "Unable to read BLE MAC, rc=%d", rc);
-    }
-
-    s_ble_synced = true;
-    start_ble_advertising();
-}
-
-static void start_ble_advertising(void)
-{
-    struct ble_gap_adv_params adv_params = {0};
-
-    //adv_params.conn_mode = BLE_GAP_CONN_MODE_NON;
-    //adv_params.disc_mode = BLE_GAP_DISC_MODE_NON;
-    //adv_params.itvl_min = BLE_ADV_INTERVAL_UNITS;
-    //adv_params.itvl_max = BLE_ADV_INTERVAL_UNITS;
-
-    int rc = ble_gap_adv_set_data(s_adv_data, s_adv_len);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gap_adv_set_data failed: rc=%d", rc);
-        return;
-    }
-
-    rc = ble_gap_adv_start(s_own_addr_type,
-                           NULL,
-                           BLE_HS_FOREVER,
-                           &adv_params,
-                           NULL,
-                           NULL);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gap_adv_start failed: rc=%d", rc);
-        return;
-    }
-
-    s_adv_started = true;
-    ESP_LOGI(TAG, "BLE advertising started");
-}
-
-static void ble_host_task(void *param)
-{
-    (void)param;
-    nimble_port_run();
-    nimble_port_freertos_deinit();
 }
 
 static void init_ulp_program(void)

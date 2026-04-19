@@ -1,3 +1,18 @@
+/*
+ * ======================================================================================
+ * ESP32-C6 ULP PULSE COUNTER FOR ANEMOMETER
+ * ======================================================================================
+ * This program runs on the LP/ULP core while the main CPU is in deep sleep.
+ *
+ * Function overview:
+ * 1. Configure a GPIO rising-edge interrupt on the anemometer sensor pin.
+ * 2. On each interrupt, apply a short debounce filter to reject false edges.
+ * 3. Increment pulse_count for valid pulses so the main firmware can compute
+ *    rotational speed and wind speed when it wakes up.
+ * 4. Stay in an interrupt wait state between pulses to minimize power use.
+ * ======================================================================================
+ */
+
 #include <stdint.h>
 #include <stdbool.h>
 #include "sdkconfig.h"
@@ -7,8 +22,6 @@
 #include "ulp_lp_core_interrupts.h"
 #include "riscv/csr.h"
 #include "../src/anemometer.h"
-
-#define DEBOUNCE_INTERVAL_CYCLES 1000
 
 
 uint32_t pulse_count;

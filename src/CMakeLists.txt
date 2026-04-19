@@ -1,5 +1,5 @@
 idf_component_register(SRCS "anemometer.c"
-                    REQUIRES ulp bt nvs_flash esp_adc
+                    REQUIRES ulp nvs_flash esp_adc ble_hci
                     INCLUDE_DIRS ".")
 #
 # ULP support additions to component CMakeLists.txt.
