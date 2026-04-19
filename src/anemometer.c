@@ -176,14 +176,13 @@ void app_main(void)
                  ulp_pulse_count,
                  heartbeat_remaining_s);
     }
-
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
     /* Go back to sleep, only the ULP will run */
     ESP_LOGI(TAG, "Entering in deep sleep");
 
     /* Small delay to ensure the messages are printed */
-    if (esp_log_level_get(TAG) >= ESP_LOG_INFO) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+#endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 
     ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup());
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(SLEEP_DURATION * 1000000ULL));
@@ -201,6 +200,7 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent)
     }
     ESP_ERROR_CHECK(ret);
 
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
     uint8_t ble_addr[6] = {0};
     if (esp_read_mac(ble_addr, ESP_MAC_BT) == ESP_OK) {
         ESP_LOGI(TAG,
@@ -214,20 +214,21 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent)
     } else {
         ESP_LOGW(TAG, "Unable to read BLE MAC");
     }
+#endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 
     ESP_ERROR_CHECK(ble_hci_init());
 
     build_ble_adv(wind_speed_mps, battery_percent);
 
     ble_hci_adv_param_t adv_param = {
-        .adv_int_min = BLE_ADV_INTERVAL_UNITS,
-        .adv_int_max = BLE_ADV_INTERVAL_UNITS,
-        .adv_type = ADV_TYPE_NONCONN_IND,
-        .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
-        .peer_addr = {0},
-        .peer_addr_type = BLE_ADDR_TYPE_PUBLIC,
-        .channel_map = ADV_CHNL_ALL,
-        .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
+        .adv_int_min = BLE_ADV_INTERVAL_UNITS,                  /* Sets the minimum and maximum time between advertisements */
+        .adv_int_max = BLE_ADV_INTERVAL_UNITS,                  /* Setting them to the same value creates a fixed advertising interval */
+        .adv_type = ADV_TYPE_NONCONN_IND,                       /* Non-connectable undirected advertising (beacon mode) */
+        .own_addr_type = BLE_ADDR_TYPE_PUBLIC,                  /* Use public MAC address for better compatibility */
+        .peer_addr = {0},                                       /* Not used in non-connectable mode, but set to zero just in case */
+        .peer_addr_type = BLE_ADDR_TYPE_PUBLIC,                 /* Not used in non-connectable mode, but set to public just in case */
+        .channel_map = ADV_CHNL_ALL,                            /* Advertise on all channels (37, 38, 39) for best discoverability */
+        .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY, /* Allow all scan and connection requests (though we won't accept connections in non-connectable mode) */
     };
 
     ESP_ERROR_CHECK(ble_hci_set_adv_param(&adv_param));
@@ -416,18 +417,12 @@ static void init_ulp_program(void)
     rtc_gpio_pullup_en(SENSOR_PIN);
     rtc_gpio_pulldown_dis(SENSOR_PIN);
 
-    lp_core_uart_cfg_t uart_cfg = LP_CORE_UART_DEFAULT_CONFIG();
-
-    ESP_ERROR_CHECK(lp_core_uart_init(&uart_cfg));
-
-    esp_err_t err = ulp_lp_core_load_binary(ulp_main_bin_start, (ulp_main_bin_end - ulp_main_bin_start));
-    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(ulp_lp_core_load_binary(ulp_main_bin_start, (ulp_main_bin_end - ulp_main_bin_start)));
 
     /* Start the program */
     ulp_lp_core_cfg_t cfg = {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
     };
 
-    err = ulp_lp_core_run(&cfg);
-    ESP_ERROR_CHECK(err);
+    ESP_ERROR_CHECK(ulp_lp_core_run(&cfg));
 }
