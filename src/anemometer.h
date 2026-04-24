@@ -13,14 +13,14 @@
 #define CALIBRATION_FACTOR 2.5f             // Empirical multiplier to match real wind speed
 
 /* BLE/BTHome beacon behavior */
-#define BLE_ADV_DURATION_MS 1500            // Advertising window duration after each wakeup
-#define BLE_ADV_INTERVAL_UNITS 160          // BLE adv interval units (0.625 ms each): 160 = 100 ms
+#define BLE_ADV_DURATION_MS 1000            // Advertising window duration after each wakeup
+#define BLE_ADV_INTERVAL_UNITS 32           // BLE adv interval units (0.625 ms each): 32 = 20 ms
 
 /* Battery measurement via ADC */
 #define BATTERY_ADC_GPIO 0                  // GPIO connected to battery sense divider output
                                             // Must be an ADC-capable pin: GPIO0-GPIO6 on ESP32-C6
                                             // Avoid GPIO4 and GPIO5 which are used for strapping
-#define BATTERY_ADC_SAMPLES 8               // Number of ADC readings averaged per measurement
+#define BATTERY_ADC_SAMPLES 1               // Number of ADC readings averaged per measurement
 #define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0f  // Scale factor from ADC node voltage to battery voltage
-#define BATTERY_MIN_MV 3300                 // Battery voltage mapped to 0%
-#define BATTERY_MAX_MV 4150                 // Battery voltage mapped to 100%
+#define BATTERY_MIN_MV 3200                 // Battery voltage mapped to 0%
+#define BATTERY_MAX_MV 4100                 // Battery voltage mapped to 100%

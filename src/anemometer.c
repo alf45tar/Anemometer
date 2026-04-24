@@ -61,8 +61,8 @@ static const char *TAG = "anemometer";
 
 
 static void init_ulp_program(void);
-static void init_ble(float wind_speed_mps, uint8_t battery_percent);
-static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent);
+static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id);
+static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id);
 static uint16_t read_battery_mv(void);
 static uint8_t battery_mv_to_percent(uint16_t battery_mv);
 
@@ -70,6 +70,7 @@ static RTC_DATA_ATTR bool ulp_program_initialized;
 static RTC_DATA_ATTR uint32_t last_pulse_count;
 static RTC_DATA_ATTR uint32_t heartbeat_elapsed_seconds;
 static RTC_DATA_ATTR uint32_t last_advertised_pulse_delta;
+static RTC_DATA_ATTR uint8_t bthome_packet_id;
 
 static uint8_t s_adv_data[31];
 static uint8_t s_adv_len;
@@ -103,16 +104,17 @@ void app_main(void)
     }
 #endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 
-    /* Load the LP program only once so timer wakeups do not reset its state. */
+    /* Load the LP program only once so timer wakeups do not reset its state */
     if (!ulp_program_initialized) {
         ESP_LOGI(TAG, "Initializing ULP program!");
         init_ulp_program();
         ulp_program_initialized = true;
 
-        /* Baseline on first boot to avoid using stale/uninitialized pulse deltas. */
+        /* Baseline on first boot to avoid using stale/uninitialized pulse deltas */
         last_pulse_count = ulp_pulse_count;
         heartbeat_elapsed_seconds = 0;
         last_advertised_pulse_delta = 0;
+        bthome_packet_id = 0;
     }
 
     heartbeat_elapsed_seconds += SLEEP_DURATION;
@@ -123,7 +125,7 @@ void app_main(void)
     uint32_t heartbeat_remaining_s = heartbeat_due ? 0 : (HEARTBEAT_INTERVAL - heartbeat_elapsed_seconds);
 
     if (should_advertise) {
-        /* Compute telemetry only when we are going to advertise. */
+        /* Compute telemetry only when we are going to advertise */
         float rotations = (float)pulse_delta / PULSES_PER_ROTATION;
         float rps = rotations / (float)SLEEP_DURATION;
         float rpm = rps * 60.0f;
@@ -161,13 +163,14 @@ void app_main(void)
         }
 
         /* Broadcast a BTHome frame as a non-connectable BLE beacon only when needed */
-        init_ble(wind_speed_mps, battery_percent);
+        init_ble(wind_speed_mps, battery_percent, bthome_packet_id);
+        bthome_packet_id = (uint8_t)(((uint16_t)bthome_packet_id + 1U) & 0xFFU);
         last_advertised_pulse_delta = pulse_delta;
 
-        /* Keep beaconing for a short window before deep sleep. */
+        /* Keep beaconing for a short window before deep sleep */
         vTaskDelay(pdMS_TO_TICKS(BLE_ADV_DURATION_MS));
 
-        /* Stop advertising before sleeping. */
+        /* Stop advertising before sleeping */
         ESP_ERROR_CHECK(ble_hci_set_adv_enable(false));
         ESP_ERROR_CHECK(ble_hci_deinit());
     } else {
@@ -190,9 +193,9 @@ void app_main(void)
     esp_deep_sleep_start();
 }
 
-static void init_ble(float wind_speed_mps, uint8_t battery_percent)
+static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id)
 {
-    /* NVS is required by the BT controller stack initialization path. */
+    /* NVS is required by the BT controller stack initialization path */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -218,7 +221,7 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent)
 
     ESP_ERROR_CHECK(ble_hci_init());
 
-    build_ble_adv(wind_speed_mps, battery_percent);
+    build_ble_adv(wind_speed_mps, battery_percent, packet_id);
 
     ble_hci_adv_param_t adv_param = {
         .adv_int_min = BLE_ADV_INTERVAL_UNITS,                  /* Sets the minimum and maximum time between advertisements */
@@ -237,7 +240,7 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent)
     ESP_LOGI(TAG, "BLE HCI advertising started");
 }
 
-static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
+static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id)
 {
     uint8_t *cursor = s_adv_data;
     static const uint8_t adv_name[] = {
@@ -266,11 +269,15 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
     *cursor++ = 0x06;
 
     /* BTHome service data AD structure: len, type, UUID (0xFCD2), device info. */
-    *cursor++ = 0x09;
+    *cursor++ = 0x0B;
     *cursor++ = 0x16;
     *cursor++ = 0xD2;
     *cursor++ = 0xFC;
     *cursor++ = 0x40;
+
+    /* Packet ID = object ID 0x00, 1 byte value. */
+    *cursor++ = 0x00;
+    *cursor++ = packet_id;
 
     /* Battery = object ID 0x01, 1 byte value. */
     *cursor++ = 0x01;
@@ -306,7 +313,7 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent)
                 break;
             }
         }
-        ESP_LOGI(TAG, "BTHome V2 payload (%d bytes): %s", s_adv_len, hex_line);
+        ESP_LOGI(TAG, "BTHome V2 payload (%d bytes, packet id %u): %s", s_adv_len, packet_id, hex_line);
     }
 #endif /* CONFIG_LOG_DEFAULT_LEVEL > 0 */
 }
