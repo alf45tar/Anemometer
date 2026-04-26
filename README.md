@@ -16,7 +16,20 @@ The project uses the LP/ULP core to count anemometer pulses while the main CPU s
   * **Heartbeat:** Sends a periodic "still alive" update, usually about every 60 seconds during calm periods.
 * **Hardware Debouncing:** ULP-based software sampling filters out mechanical reed switch "bounce."
 
------
+## 🎓 What You Can Learn and Reuse in Your Projects
+
+If you are building a similar low-power sensor, these patterns are practical to reuse:
+
+* Keep the main CPU in deep sleep and let the LP/ULP RISC-V core handle pulse counting.
+* Wake on a fixed interval, compute pulse delta and wind speed, then advertise only when needed.
+* Use BTHome v2 so the sensor works directly with Home Assistant over BLE.
+* Add a heartbeat report so the device still publishes when conditions are calm.
+* Filter reed-switch bounce in ULP software instead of relying only on hardware.
+* Use RTC-capable GPIOs for ULP inputs on ESP32-C6, and avoid strapping pins.
+* Add a capacitor across the battery sense divider to stabilize high-impedance ADC readings.
+* Keep timing, calibration, BLE, and ADC values in a single header so they are easy to tune.
+* Treat wind-speed calibration as a single empirical factor that can be adjusted without changing the rest of the flow.
+* Preserve the PlatformIO + ESP-IDF setup and the debug/release sdkconfig defaults for repeatable builds.
 
 ## 🛠 Hardware Requirements
 
@@ -24,7 +37,7 @@ The project uses the LP/ULP core to count anemometer pulses while the main CPU s
 2. **Anemometer** (3-cup type with a Reed Switch).
 3. **Battery:** Li-ion 18650 or LiPo.
 
-### Bill of Materials
+### 📦 Bill of Materials
 
 | Item | Quantity | Notes |
 | :--- | :--- | :--- |
@@ -38,7 +51,7 @@ The project uses the LP/ULP core to count anemometer pulses while the main CPU s
 | Battery | 1 | Li-ion 18650 or LiPo |
 | Battery Holder | 1 | |
 
-### Wiring
+### 🔌 Wiring
 
 Connect the reed switch between SENSOR_GPIO pin and GND (no need of external pull-up resistor because internal pull-up resistor is used).
 
@@ -54,7 +67,7 @@ Connect the reed switch between SENSOR_GPIO pin and GND (no need of external pul
      GND
 ```
 
-For battery monitoring, a 470K resistor divider is required.
+For battery monitoring, a 470 kΩ resistor divider is required.
 For stable ADC readings with high-value resistors, place a 0.1uF capacitor from ADC pin to GND.
 
 ```text
@@ -62,19 +75,19 @@ For stable ADC readings with high-value resistors, place a 0.1uF capacitor from 
                      |
                      |
 B+ -----/\/\/\/------+-----/\/\/\/-----+----- GND (B-)
-         470K        |      470K       |
+         470k        |      470k       |
                      |                 |
                      +-------||--------+
                             0.1uF
                          (optional)
 ```
 
-## Software Requirements
+## 💻 Software Requirements
 
 * PlatformIO
 * ESP-IDF framework via PlatformIO (already defined in `platformio.ini`)
 
-## Telemetry Format (BLE)
+## 📡 Telemetry Format (BLE)
 
 Advertising payload includes BTHome v2 service data with:
 
@@ -84,7 +97,7 @@ Advertising payload includes BTHome v2 service data with:
 
 Device name in advertisement: `Wind Sensor`
 
-## Key Tuning Constants
+## ⚙️ Key Tuning Constants
 
 Edit `src/anemometer.h`:
 
@@ -115,7 +128,7 @@ Edit `src/anemometer.h`:
 #define BATTERY_MAX_MV 4100                 // Battery voltage mapped to 100%
 ```
 
-## How It Works
+## 🔄 How It Works
 
 1. The main CPU enters deep sleep.
 2. LP/ULP firmware monitors the sensor pin (`SENSOR_PIN`) and increments pulse count on valid rising edges.
@@ -130,14 +143,15 @@ Edit `src/anemometer.h`:
    * heartbeat interval is reached
 6. Device returns to deep sleep.
 
-## Dimensions
+## 📐 Dimensions
 
 ![Anemometer Front View](images/anemometer-front.jpg)
 ![Anemometer Top View](images/anemometer-top.jpg)
 
-## Example use case
+## 🧪 Photos
 
 ![Anemometer ESP32-C6](images/anemometer-esp32c6.jpg)
+
 
 ## 📜 License
 
