@@ -33,7 +33,8 @@ If you are building a similar low-power sensor, these patterns are practical to 
 
 ## 🛠 Hardware Requirements
 
-1. **ESP32-C6  Board** (e.g., ESP32-C6 Super Mini). For ESP32 and ESP32-S3 boards, check the [ESP32/ESP32-S3 anemometer repository](https://github.com/alf45tar/ESP32-ULP-BLE-Anemometer).
+1. **ESP32-C6  Board** (e.g., ESP32-C6 Super Mini).
+   * For ESP32 and ESP32-S3 boards, check the [ESP32/ESP32-S3](https://github.com/alf45tar/ESP32-ULP-BLE-Anemometer) anemometer project.
 2. **Anemometer** (3-cup type with a Reed Switch).
 3. **Battery:** Li-ion 18650 or LiPo.
 
