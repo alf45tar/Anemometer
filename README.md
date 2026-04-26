@@ -10,6 +10,7 @@ The project uses the LP/ULP core to count anemometer pulses while the main CPU s
 
 * **Ultra-Low Power:** Can be as low as **\~15µA** in deep sleep on the ESP32-C6 alone. Actual current depends on the board and any attached hardware. The main cores only wake up to calculate and transmit data.
 * **BTHome V2 Protocol:** Works natively with **Home Assistant** via Bluetooth—no custom integration or ESPHome YAML required. See [bthome.io](https://bthome.io).
+* **Waterproof:** Designed to be waterproof for outdoor use.
 * **Intelligent Reporting:**
   * **Wind Detected:** Typically reports on the next 5-second wake cycle while wind is present.
   * **Change Detection:** Tries to report a speed change as soon as it is noticed on the next wake cycle.
@@ -49,6 +50,7 @@ If you are building a similar low-power sensor, these patterns are practical to 
 | M3 hex socket cap screw M3x10 | 3 | Fastens the main body to the support |
 | Reed switch | 1 | Wind pulse sensor |
 | Magnet 6x3 mm | 2 | For triggering the reed switch |
+| O-Ring 8x2 mm | 1 | To seal the base of the rotor and the support |
 | Battery | 1 | Li-ion 18650 or LiPo |
 | Battery Holder | 1 | |
 
