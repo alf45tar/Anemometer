@@ -42,7 +42,7 @@ If you are building a similar low-power sensor, these patterns are practical to 
 | Item | Quantity | Notes |
 | :--- | :--- | :--- |
 | ESP32-C6 Super Mini | 1 | Very cheap and low power board |
-| 3D-printed anemometer | 1 | [STL files for the 3D-printed anemometer](https://github.com/alf45tar/Anemometer/stl) |
+| 3D-printed anemometer | 1 | STL files for the [3D-printed parts](https://github.com/alf45tar/Anemometer/tree/main/stl) |
 | 608 bearing 8x22x7 mm | 1 | Very common bearing for shaft support |
 | M3 heat-set insert | 3 | For connecting the main body to the support and collar |
 | M3 hex socket cap screw M3x10 | 3 | Fastens the main body to the support |
