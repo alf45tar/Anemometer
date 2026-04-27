@@ -436,7 +436,7 @@ static uint8_t battery_mv_to_percent(uint16_t battery_mv)
 static int16_t read_internal_temp_centi(void)
 {
     temperature_sensor_handle_t temp_sensor = NULL;
-    temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-30, 50);
+    temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
     float temperature_c = 0.0f;
 
     if (temperature_sensor_install(&temp_sensor_config, &temp_sensor) != ESP_OK) {

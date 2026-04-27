@@ -96,9 +96,12 @@ Advertising payload includes BTHome v2 service data with:
 
 * Packet ID (object id `0x00`)
 * Battery percentage (object id `0x01`)
+* ESP32-C6 internal temperature in 0.01 °C units (object id `0x02`)
 * Wind speed in 0.01 m/s units (object id `0x44`)
 
 Device name in advertisement: `Wind Sensor`
+
+Note: the temperature value is the ESP32-C6 internal chip temperature, not an ambient room sensor. Because the CPU spends most of its time in deep sleep, this reading is typically close to ambient. The internal temperature sensor is configured for a `-10` to `80` °C range.
 
 ## ⚙️ Key Tuning Constants
 
@@ -141,6 +144,7 @@ Edit `src/anemometer.h`:
    * RPM
    * wind speed (m/s and km/h)
    * battery voltage and percentage
+   * ESP32-C6 internal temperature
 5. BLE advertising is sent when:
    * wind value changed, or
    * heartbeat interval is reached
