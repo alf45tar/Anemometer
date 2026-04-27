@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include "esp_attr.h"
 #include "esp_check.h"
@@ -42,6 +43,7 @@
 #include "esp_sleep.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
+#include "driver/temperature_sensor.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
@@ -61,10 +63,11 @@ static const char *TAG = "anemometer";
 
 
 static void init_ulp_program(void);
-static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id);
-static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id);
+static void init_ble(float wind_speed_mps, uint8_t battery_percent, int16_t internal_temp_centi, uint8_t packet_id);
+static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, int16_t internal_temp_centi, uint8_t packet_id);
 static uint16_t read_battery_mv(void);
 static uint8_t battery_mv_to_percent(uint16_t battery_mv);
+static int16_t read_internal_temp_centi(void);
 
 static RTC_DATA_ATTR bool ulp_program_initialized;
 static RTC_DATA_ATTR uint32_t last_pulse_count;
@@ -133,18 +136,21 @@ void app_main(void)
         float wind_speed_kmh = wind_speed_mps * 3.6f;
         uint16_t battery_mv = read_battery_mv();
         uint8_t battery_percent = battery_mv_to_percent(battery_mv);
+        int16_t internal_temp_centi = read_internal_temp_centi();
+        float internal_temp_c = (float)internal_temp_centi / 100.0f;
 
         /* Print speed if changed. */
         if (wind_changed) {
             ESP_LOGI(TAG,
-                    "Pulse count: %"PRIu32" (+%"PRIu32") | RPM: %.1f | Wind: %.2f m/s (%.2f km/h) | Battery: %u mV (%u%%)",
+                    "Pulse count: %"PRIu32" (+%"PRIu32") | RPM: %.1f | Wind: %.2f m/s (%.2f km/h) | Battery: %u mV (%u%%) | Temperature: %.2f °C",
                     ulp_pulse_count,
                     pulse_delta,
                     rpm,
                     wind_speed_mps,
                     wind_speed_kmh,
                     battery_mv,
-                    battery_percent);
+                    battery_percent,
+                    internal_temp_c);
             last_pulse_count = ulp_pulse_count;
             heartbeat_elapsed_seconds = 0;
         }
@@ -152,18 +158,19 @@ void app_main(void)
         /* Heartbeat every 60 seconds, if no pulse count changing */
         if (heartbeat_due) {
             ESP_LOGI(TAG,
-                    "Heartbeat - Pulse count: %"PRIu32" | RPM: %.1f | Wind: %.2f m/s (%.2f km/h) | Battery: %u mV (%u%%)",
+                    "Heartbeat - Pulse count: %"PRIu32" | RPM: %.1f | Wind: %.2f m/s (%.2f km/h) | Battery: %u mV (%u%%) | Temperature: %.2f °C",
                     ulp_pulse_count,
                     rpm,
                     wind_speed_mps,
                     wind_speed_kmh,
                     battery_mv,
-                    battery_percent);
+                    battery_percent,
+                    internal_temp_c);
             heartbeat_elapsed_seconds = 0;
         }
 
         /* Broadcast a BTHome frame as a non-connectable BLE beacon only when needed */
-        init_ble(wind_speed_mps, battery_percent, bthome_packet_id);
+        init_ble(wind_speed_mps, battery_percent, internal_temp_centi, bthome_packet_id);
         bthome_packet_id = (uint8_t)(((uint16_t)bthome_packet_id + 1U) & 0xFFU);
         last_advertised_pulse_delta = pulse_delta;
 
@@ -193,7 +200,7 @@ void app_main(void)
     esp_deep_sleep_start();
 }
 
-static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id)
+static void init_ble(float wind_speed_mps, uint8_t battery_percent, int16_t internal_temp_centi, uint8_t packet_id)
 {
     /* NVS is required by the BT controller stack initialization path */
     esp_err_t ret = nvs_flash_init();
@@ -221,7 +228,7 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t pack
 
     ESP_ERROR_CHECK(ble_hci_init());
 
-    build_ble_adv(wind_speed_mps, battery_percent, packet_id);
+    build_ble_adv(wind_speed_mps, battery_percent, internal_temp_centi, packet_id);
 
     ble_hci_adv_param_t adv_param = {
         .adv_int_min = BLE_ADV_INTERVAL_UNITS,                  /* Sets the minimum and maximum time between advertisements */
@@ -240,7 +247,7 @@ static void init_ble(float wind_speed_mps, uint8_t battery_percent, uint8_t pack
     ESP_LOGI(TAG, "BLE HCI advertising started");
 }
 
-static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t packet_id)
+static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, int16_t internal_temp_centi, uint8_t packet_id)
 {
     uint8_t *cursor = s_adv_data;
     static const uint8_t adv_name[] = {
@@ -258,6 +265,11 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t
     }
 
     uint8_t battery_payload = battery_percent;
+
+    uint8_t temperature_payload[2] = {
+        (uint8_t)(internal_temp_centi & 0xFF),
+        (uint8_t)((internal_temp_centi >> 8) & 0xFF),
+    };
     uint8_t speed_payload[2] = {
         (uint8_t)(speed_x100 & 0xFF),
         (uint8_t)((speed_x100 >> 8) & 0xFF),
@@ -269,7 +281,7 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t
     *cursor++ = 0x06;
 
     /* BTHome service data AD structure: len, type, UUID (0xFCD2), device info. */
-    *cursor++ = 0x0B;
+    *cursor++ = 0x0E;
     *cursor++ = 0x16;
     *cursor++ = 0xD2;
     *cursor++ = 0xFC;
@@ -282,6 +294,11 @@ static void build_ble_adv(float wind_speed_mps, uint8_t battery_percent, uint8_t
     /* Battery = object ID 0x01, 1 byte value. */
     *cursor++ = 0x01;
     *cursor++ = battery_payload;
+
+    /* Temperature = object ID 0x02, 2 bytes little-endian in 0.01 degC units. */
+    *cursor++ = 0x02;
+    *cursor++ = temperature_payload[0];
+    *cursor++ = temperature_payload[1];
 
     /* Speed = object ID 0x44, 2 bytes little-endian in 0.01 m/s units. */
     *cursor++ = 0x44;
@@ -414,6 +431,45 @@ static uint8_t battery_mv_to_percent(uint16_t battery_mv)
     uint32_t num = (uint32_t)(battery_mv - BATTERY_MIN_MV) * 100U;
     uint32_t den = (uint32_t)(BATTERY_MAX_MV - BATTERY_MIN_MV);
     return (uint8_t)(num / den);
+}
+
+static int16_t read_internal_temp_centi(void)
+{
+    temperature_sensor_handle_t temp_sensor = NULL;
+    temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-30, 50);
+    float temperature_c = 0.0f;
+
+    if (temperature_sensor_install(&temp_sensor_config, &temp_sensor) != ESP_OK) {
+        ESP_LOGW(TAG, "temperature_sensor_install failed");
+        return 0;
+    }
+
+    if (temperature_sensor_enable(temp_sensor) != ESP_OK) {
+        ESP_LOGW(TAG, "temperature_sensor_enable failed");
+        temperature_sensor_uninstall(temp_sensor);
+        return 0;
+    }
+
+    if (temperature_sensor_get_celsius(temp_sensor, &temperature_c) != ESP_OK) {
+        ESP_LOGW(TAG, "temperature_sensor_get_celsius failed");
+        temperature_c = 0.0f;
+    }
+
+    if (temperature_sensor_disable(temp_sensor) != ESP_OK) {
+        ESP_LOGW(TAG, "temperature_sensor_disable failed");
+    }
+    if (temperature_sensor_uninstall(temp_sensor) != ESP_OK) {
+        ESP_LOGW(TAG, "temperature_sensor_uninstall failed");
+    }
+
+    long temp_centi = lroundf(temperature_c * 100.0f);
+    if (temp_centi < INT16_MIN) {
+        temp_centi = INT16_MIN;
+    } else if (temp_centi > INT16_MAX) {
+        temp_centi = INT16_MAX;
+    }
+
+    return (int16_t)temp_centi;
 }
 
 static void init_ulp_program(void)
