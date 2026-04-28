@@ -11,6 +11,7 @@ The project uses the LP/ULP core to count anemometer pulses while the main CPU s
 * **Ultra-Low Power:** Can be as low as **\~15µA** in deep sleep on the ESP32-C6 alone. Actual current depends on the board and any attached hardware. The main cores only wake up to calculate and transmit data.
 * **BTHome V2 Protocol:** Works natively with **Home Assistant** via Bluetooth—no custom integration or ESPHome YAML required. See [bthome.io](https://bthome.io).
 * **Waterproof:** Designed to be waterproof for outdoor use.
+* **Temperature Sensor:** Includes the ESP32-C6 internal temperature reading alongside wind speed and battery level telemetry.
 * **Intelligent Reporting:**
   * **Wind Detected:** Typically reports on the next 5-second wake cycle while wind is present.
   * **Change Detection:** Tries to report a speed change as soon as it is noticed on the next wake cycle.
@@ -24,6 +25,7 @@ If you are building a similar low-power sensor, these patterns are practical to 
 * Keep the main CPU in deep sleep and let the LP/ULP RISC-V core handle pulse counting.
 * Wake on a fixed interval, compute pulse delta and wind speed, then advertise only when needed.
 * Use BTHome v2 so the sensor works directly with Home Assistant over BLE.
+* Add a temperature reading to the same BLE payload so you can track the device environment without extra hardware.
 * Add a heartbeat report so the device still publishes when conditions are calm.
 * Filter reed-switch bounce in ULP software instead of relying only on hardware.
 * Use RTC-capable GPIOs for ULP inputs on ESP32-C6, and avoid strapping pins.
