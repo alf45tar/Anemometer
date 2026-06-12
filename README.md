@@ -92,6 +92,35 @@ B+ -----/\/\/\/------+-----/\/\/\/-----+----- GND (B-)
 * PlatformIO
 * ESP-IDF framework via PlatformIO (already defined in `platformio.ini`)
 
+## 🔌 Shelly Integration
+
+If you are using **Shelly** devices, the anemometer can also be configured as a **virtual component** in your Shelly setup. This does **not** require Home Assistant.
+
+### Example Use Case
+
+Use the anemometer to automatically close an awning with a **Shelly 2PM Gen3** when wind speed gets too high, without any extra wiring between the wind sensor and the Shelly device. The anemometer broadcasts wind data over BLE, and Shelly handles the automation logic on its side.
+
+### ☁️ ThingSpeak Upload Script
+
+The repository also includes [thingspeak-iot.js](thingspeak-iot.js), a separate Shelly script that forwards the latest sensor values to ThingSpeak.
+
+It samples the configured Shelly components every 5 seconds, keeps the maximum value seen during each 15-second window, and sends one update to ThingSpeak at the end of that window.
+
+![ThingSpeak Dashboard](images/thingspeak-dashboard.jpg)
+
+#### What it sends
+
+* `field1`: battery percentage
+* `field2`: wind speed
+* `field3`: temperature
+
+#### Setup notes
+
+* Paste the script into a Shelly device that supports JavaScript scripting.
+* Set your ThingSpeak Write API Key in `thingspeak-iot.js`.
+* Update the component IDs so they match the battery, wind speed, and temperature sensors exposed by your Shelly device.
+* The script only uploads when it has collected valid data for the current window.
+
 ## 📡 Telemetry Format (BLE)
 
 Advertising payload includes BTHome v2 service data with:
