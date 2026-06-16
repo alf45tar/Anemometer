@@ -174,6 +174,8 @@ Use the anemometer to automatically close an awning with a **Shelly 2PM Gen3** w
 
 The repository also includes [thingspeak-iot.js](thingspeak-iot.js), a separate Shelly script that forwards the latest sensor values to [ThingSpeak](https://thingspeak.mathworks.com/channels/3405563).
 
+![](https://thingspeak.mathworks.com/apps/matlab_visualizations/673630) ![](https://thingspeak.mathworks.com/apps/matlab_visualizations/673256)
+
 It samples the configured Shelly components every 5 seconds, keeps the maximum value seen during each 15-second window, and sends one update to ThingSpeak at the end of that window.
 
 ![ThingSpeak Dashboard](images/thingspeak-dashboard.jpg)
