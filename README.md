@@ -172,7 +172,7 @@ Use the anemometer to automatically close an awning with a **Shelly 2PM Gen3** w
 
 ### ☁️ ThingSpeak Upload Script
 
-The repository also includes [thingspeak-iot.js](thingspeak-iot.js), a separate Shelly script that forwards the latest sensor values to [ThingSpeak](https://thingspeak.mathworks.com/channels/3405563).
+The repository also includes [thingspeak-iot.js](thingspeak-iot.js), a separate Shelly script that forwards the latest sensor values to [ThingSpeak](https://thingspeak.mathworks.com).
 
 [![ThingSpeak Visualization](https://img.shields.io/badge/ThingSpeak-Live_Data-blue?style=for-the-badge&logo=mathworks)](https://thingspeak.mathworks.com/channels/3405563)
 
@@ -191,6 +191,28 @@ It samples the configured Shelly components every 5 seconds, keeps the maximum v
 
 * Paste the script into a Shelly device that supports JavaScript scripting.
 * Set your ThingSpeak Write API Key in `thingspeak-iot.js`.
+* Update the component IDs so they match the battery, wind speed, and temperature sensors exposed by your Shelly device.
+* The script only uploads when it has collected valid data for the current window.
+
+### ☁️ ThingsBoard Upload Script
+
+The repository also includes [thingsboard-iot.js](thingsboard-iot.js), a Shelly script that forwards sensor data to [ThingsBoard](https://thingsboard.io/).
+
+[![ThingsBoard Visualization](https://img.shields.io/badge/ThingsBoard-Live_Data-green?style=for-the-badge&logo=internetofthings)](https://eu.thingsboard.cloud/dashboard/337dab50-6b22-11f1-a6df-b7b5c1df0b6e?publicId=dbaa93e0-6b24-11f1-a6df-b7b5c1df0b6e)
+
+It samples the configured Shelly components every 5 seconds, keeps the maximum value seen during each 15-second window, and sends one update to ThingsBoard at the end of that window.
+
+#### What it sends
+
+* `battery`: battery percentage
+* `wind_speed`: wind speed
+* `temperature`: temperature
+
+#### Setup notes
+
+* Paste the script into a Shelly device that supports JavaScript scripting.
+* Create a new **Device** in ThingsBoard and obtain the **Device Token**.
+* Set your ThingsBoard host and Device Token in `thingsboard-iot.js`:
 * Update the component IDs so they match the battery, wind speed, and temperature sensors exposed by your Shelly device.
 * The script only uploads when it has collected valid data for the current window.
 
